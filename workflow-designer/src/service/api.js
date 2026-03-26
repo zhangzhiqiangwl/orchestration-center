@@ -108,3 +108,26 @@ export async function generateWorkflowFromIntent(intent, name = "AI Generated Wo
         throw new Error(errorMsg);
     }
 }
+
+export async function getWorkflowQuestions() {
+    return api.get(`${getBaseUrl()}/rest/workflow_questions`);
+}
+
+export async function getWorkFlowRecords(questionId) {
+    return api.get(`${getBaseUrl()}/rest/workflow_records?questionId=${questionId}`);
+}
+
+export async function startProcess(questionId, questionText) {
+    return api.post(`${getBaseUrl()}/rest/start_process`, {
+        question_id: questionId,
+        question_text: questionText
+    });
+}
+
+export async function deleteWorkflowByQuestionId(questionId) {
+    return api.delete(`${getBaseUrl()}/rest/workflow_question?questionId=${questionId}`);
+}
+
+export async function deleteWorkflowDbByQuestionId(questionId) {
+    return api.delete(`${getBaseUrl()}/rest/workflow_db?questionId=${questionId}`);
+}
