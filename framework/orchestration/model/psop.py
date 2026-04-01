@@ -25,6 +25,7 @@ class StepType(str, Enum):
 
 
 class Task(BaseModel):
+    task_id: str = Field(default_factory=lambda: str(uuid4()), description="Unique task identifier")
     description: str = Field(..., description="Task description", examples=['Execute energy saving analysis'])
     agent: str = Field(..., description="Name of the agent executing the task")
     skill: str = Field(..., description="Skill required to execute the task",
@@ -63,4 +64,4 @@ class PSOP(BaseModel):
     user_intent: Optional[str] = Field(None,
                                        description="Original user intent that generated this workflow,\
                                         empty by default")
-    tags: Optional[str] = Field(None, description="Tags for quick filtering and categorization")
+    tags: Optional[List[str]] = Field(default_factory=list, description="Tags for quick filtering")
