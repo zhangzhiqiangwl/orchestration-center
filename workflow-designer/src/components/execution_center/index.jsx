@@ -18,7 +18,7 @@ import {
     Bot,
     PlayCircle
 } from 'lucide-react';
-import { getWorkflow, getWorkflowById, getStartProcessStreamUrl, matchWorkflows, generateWorkflowFromIntent } from '@/service/api.js';
+import { getWorkflow, getWorkflowById, getStartProcessStreamUrl, matchWorkflows } from '@/service/api.js';
 import { transformWorkflowToReactFlow } from '@/components/orchestration_center/workflow/utils/index.jsx';
 import UnifiedWorkflow from '../orchestration_center/workflow/index.jsx';
 
@@ -145,7 +145,6 @@ const ExecutionCenter = ({ isDark }) => {
     const [userIntent, setUserIntent] = useState('');
     const [workflowSource, setWorkflowSource] = useState(null); // 'retrieved' | 'generated'
     const [isMatching, setIsMatching] = useState(false);
-    const [isGenerating, setIsGenerating] = useState(false);
 
     const logScrollRef = useRef(null);
     const [autoScroll, setAutoScroll] = useState(true);
@@ -188,37 +187,13 @@ const ExecutionCenter = ({ isDark }) => {
                 const match = results[0];
                 setSelectedId(match.workflow_id);
                 setWorkflowSource('retrieved');
-                setIsMatching(false);
             } else {
-                setIsMatching(false);
-                setIsGenerating(true);
-
-                try {
-                    const generated = await generateWorkflowFromIntent(userIntent);
-                    if (generated) {
-                        const wfId = generated.workflow_id || generated.id;
-                        if (wfId) {
-                            setSelectedId(wfId);
-                            setWorkflowSource('generated');
-                        } else {
-                            const { nodes: n, edges: e } = transformWorkflowToReactFlow(generated);
-                            setNodes(n);
-                            setEdges(e);
-                            setWorkflowSource('generated');
-                        }
-                    } else {
-                        throw new Error("Generation failed.");
-                    }
-                } catch (genErr) {
-                    console.error("Auto generation failed:", genErr);
-                    setError("No matching workflow found and auto-generation failed.");
-                } finally {
-                    setIsGenerating(false);
-                }
+                setError("未检索到匹配的工作流");
             }
         } catch (err) {
             console.error("Failed to match workflows:", err);
             setError("Match request failed.");
+        } finally {
             setIsMatching(false);
         }
     };
@@ -370,7 +345,7 @@ const ExecutionCenter = ({ isDark }) => {
                     <div className="flex items-center gap-3 pr-6 border-r border-zinc-100 dark:border-zinc-800">
                         <button
                             onClick={handleMatchIntent}
-                            disabled={isMatching || isGenerating || !userIntent.trim()}
+                            disabled={isMatching || !userIntent.trim()}
                             className="flex items-center gap-3 px-6 h-14 bg-blue-600 hover:bg-blue-500 text-white rounded-[1.25rem] text-sm font-black uppercase tracking-wider transition-all active:scale-95 disabled:opacity-50 shadow-lg shadow-blue-500/20"
                         >
                             <Search size={16} strokeWidth={3} />
@@ -414,7 +389,7 @@ const ExecutionCenter = ({ isDark }) => {
                     <div className={`h-16 px-8 border-b flex justify-between items-center ${theme.header}`}>
                         <div className="flex items-center gap-3">
                             <h2 className="text-lg font-black dark:text-white ">
-                                {(isMatching || isGenerating) ? t('execution.processing_input') : (nodes.length > 0 ? (workflowSource === 'generated' ? t('execution.ai_planned') : t('execution.workflow_label')) : t('execution.interface_label'))}
+                                {isMatching ? t('execution.processing_input') : (nodes.length > 0 ? (workflowSource === 'generated' ? t('execution.ai_planned') : t('execution.workflow_label')) : t('execution.interface_label'))}
                             </h2>
                             {workflowSource && (
                                 <span className={`px-2 py-0.5 rounded-full text-[9px] font-black  ${workflowSource === 'generated' ? 'bg-purple-100 dark:bg-purple-900/40 text-purple-600' : 'bg-blue-100 dark:bg-blue-900/40 text-blue-600'}`}>
@@ -425,12 +400,7 @@ const ExecutionCenter = ({ isDark }) => {
                     </div>
 
                     <div className={`flex-1 relative ${theme.content}`}>
-                        {isGenerating && (
-                            <div className="absolute inset-0 z-[60] flex flex-col items-center justify-center bg-white/60 dark:bg-zinc-950/60 backdrop-blur-md">
-                                <Zap size={48} className="text-blue-600 animate-bounce mb-6" />
-                                <h3 className="text-lg font-black uppercase tracking-widest text-blue-600">{t('execution.generating_wf')}</h3>
-                            </div>
-                        )}
+
 
                         {selectedId || nodes.length > 0 ? (
                             <UnifiedWorkflow
@@ -443,12 +413,10 @@ const ExecutionCenter = ({ isDark }) => {
                                 onSelectChange={handleNodeSelect}
                             />
                         ) : (
-                            !isGenerating && (
-                                <div className="h-full flex flex-col items-center justify-center opacity-[0.15] dark:opacity-[0.25] text-zinc-400">
-                                    <Bot size={64} strokeWidth={1.5} />
-                                    <p className="text-xl font-black mt-4 uppercase tracking-widest">{t('execution.standby')}</p>
-                                </div>
-                            )
+                            <div className="h-full flex flex-col items-center justify-center opacity-[0.15] dark:opacity-[0.25] text-zinc-400">
+                                <Bot size={64} strokeWidth={1.5} />
+                                <p className="text-xl font-black mt-4 uppercase tracking-widest">{t('execution.standby')}</p>
+                            </div>
                         )}
 
                         {error && (
