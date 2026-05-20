@@ -33,6 +33,7 @@ from samples.negotiation_utils import (
     extract_negotiation_context_from_task_metadata,
     log_negotiation_context,
 )
+from orchestrate.core.model.psop import PSOP, Step, Task, TaskStatus
 
 
 class DynamicWorkflowEngine:
@@ -43,7 +44,8 @@ class DynamicWorkflowEngine:
         self.llm_client = get_llm_instance()
         self.agent_cards = agent_cards
         self.push_callback: Optional[Callable[[str, Dict[str, Any]], None]] = None
-        
+        self.step_outputs: Dict[str, Dict[str, Any]] = {}
+
         env_path = a2at_env_path or get_a2at_env_path()
         try:
             self.a2at_client = A2ATClient(env_path=env_path)
@@ -51,6 +53,7 @@ class DynamicWorkflowEngine:
         except Exception as e:
             logger.warning(f"Failed to initialize A2ATClient: {e}, continuing without negotiation support")
             self.a2at_client = None
+
 
     def set_push_callback(self, callback: Callable[[str, Dict[str, Any]], None]):
         self.push_callback = callback
@@ -228,11 +231,13 @@ class DynamicWorkflowEngine:
     async def _execute_subtasks(self, step: Step) -> tuple[Dict[str, Any], bool]:
         results = {}
         overall_success = True
+        context_message = self._build_context_for_step(step)
         for task in step.subtasks:
             try:
                 logger.info(f"   > Calling Agent: {task.agent}, Skill: {task.skill}, Desc: {task.description}")
 
-                raw_output = await self.send_message_to_agent(task.agent, task.description)
+                task_message = self._build_task_message(task, context_message)
+                raw_output = await self.send_message_to_agent(task.agent, task_message)
                 task.status = TaskStatus.SUCCESS
                 results[task.description] = raw_output
 
@@ -286,6 +291,26 @@ class DynamicWorkflowEngine:
                 })
                 break
         return results, overall_success
+
+    def _build_context_for_step(self, step: Step) -> str:
+        if not step.context_from:
+            return ""
+        parts = ["## 前置步骤执行结果\n"]
+        for ref_step_name in step.context_from:
+            if ref_step_name in self.step_outputs:
+                ref_results = self.step_outputs[ref_step_name]
+                parts.append(f"### {ref_step_name} 结果")
+                for task_desc, output in ref_results.items():
+                    text = output if isinstance(output, str) else str(output)
+                    parts.append(f"- 任务: \"{task_desc}\"\n  输出: {text}")
+                parts.append("")
+        return "\n".join(parts).strip()
+
+    @staticmethod
+    def _build_task_message(task: Task, context_message: str) -> str:
+        if context_message:
+            return f"{context_message}\n\n## 当前任务\n{task.description}"
+        return task.description
 
     def _llm_route_decision(self, current_step: Step, task_result: Dict[str, Any]) -> str:
         results_context = []
