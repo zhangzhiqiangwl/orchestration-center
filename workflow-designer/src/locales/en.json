@@ -178,9 +178,12 @@
     "export": {
       "success": "Workflow saved successfully",
       "failed": "Save failed, please check backend service",
-      "modalTitle": "Export Workflow",
-      "modalDesc": "Please describe the phenomenon for this workflow.",
-      "placeholder": "Input phenomenon description here..."
+      "modalTitle": "Save Workflow",
+      "modalDesc": "Enter a name and scenario description for later retrieval and invocation.",
+      "nameLabel": "Workflow Name",
+      "namePlaceholder": "e.g. Network Link Auto Recovery",
+      "descLabel": "Scenario Description",
+      "descPlaceholder": "e.g. Automatically diagnose and trigger recovery when a network link fails..."
     },
     "validate": {
       "empty": "Canvas cannot be empty",

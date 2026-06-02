@@ -385,7 +385,6 @@ const FlowInner = ({
     const [editNodes, setEditNodes, onNodesChange] = useNodesState(initialEditNodes);
     const [editEdges, setEditEdges, onEdgesChange] = useEdgesState([]);
     const [selectedElement, setSelectedElement] = useState(null);
-    const [phenomenon, setPhenomenon] = useState("");
     const [isDirty, setIsDirty] = useState(false);
     const [showExitConfirm, setShowExitConfirm] = useState(false);
 
@@ -708,7 +707,7 @@ const FlowInner = ({
                 <>
                     <div className="absolute top-6 left-1/2 -translate-x-1/2 z-50 pointer-events-none">
                         <div className="pointer-events-auto">
-                            <Toolbar isDark={isDark} nodes={editNodes} edges={editEdges} workflowId={workflowId} workflowName={workflowName} workflowDescription={workflowDescription} onCancel={handleCancel} onClear={() => { setEditNodes(initialEditNodes); setEditEdges([]); setIsDirty(true); }} onFitView={() => fitView({ padding: 0.4, duration: 800 })} phenomenon={phenomenon} onSaveSuccess={handleSaveSuccess} />
+                            <Toolbar isDark={isDark} nodes={editNodes} edges={editEdges} workflowId={workflowId} workflowName={workflowName} workflowDescription={workflowDescription} onCancel={handleCancel} onClear={() => { setEditNodes(initialEditNodes); setEditEdges([]); setIsDirty(true); }} onFitView={() => fitView({ padding: 0.4, duration: 800 })} onSaveSuccess={handleSaveSuccess} />
                         </div>
                     </div>
                     <div className="absolute left-1/2 -translate-x-1/2 bottom-8 h-auto z-40 pointer-events-none flex items-center min-h-0">
