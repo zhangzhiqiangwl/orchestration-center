@@ -486,7 +486,16 @@ class DynamicWorkflowEngine:
             logger.info(f"Negotiation continued successfully, round={context_obj.round + 1}")
             continued_context_data = continue_result.get(NEGOTIATION_CONTEXT_KEY)
         except Exception as e:
-            logger.warning(f"Failed to continue negotiation: {e}")
+            logger.error(f"Failed to continue negotiation: {e}")
+            self._push_event("negotiation_failed", {
+                "agent": agent_name,
+                "response": json.dumps({
+                    "type": "negotiation_failed",
+                    "agent": agent_name,
+                    "reason": f"continue_negotiation failed: {e}",
+                }, ensure_ascii=False),
+            })
+            return None
 
         resolved_task = build_negotiation_resolution_task(
             clean_original, clarification,

@@ -173,7 +173,7 @@ async def run_psop_sse(psop: PSOP, agent_cards: List[AgentCard], runtime_intent:
 
             await workflow_task
 
-            yield "event: close\ndata: {}\n\n"
+            yield f"data: {json.dumps({'type': 'close', 'data': {}})}\n\n"
         except GeneratorExit:
             logger.info(f"SSE client disconnected for psop_id={psop.id}, cancelling workflow")
         finally:

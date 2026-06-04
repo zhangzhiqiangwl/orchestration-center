@@ -153,7 +153,7 @@ def main():
     server_config = get_conf()
     is_https = server_config.get("enable_https", True)
     is_enable_https = str(is_https).lower() == 'true'
-    if server_config.get('persistence_mode', 'file') != 'file':
+    if server_config.get('persistence_mode', 'file').lower() != 'file':
         create_tables()
     if not is_enable_https:
         uvicorn.run(app, host=server_config.get('ip', "127.0.0.1"), port=int(server_config.get('port', 60000)))

@@ -21,6 +21,7 @@ from typing import Optional, List
 from loguru import logger
 
 from common.custom import HandlerRegistry, InterfaceType
+from common.custom.psop_processor import build_tasks_summary
 from common.llm import get_llm_instance
 from common.util.config_util import get_conf
 from orchestrate.core.model.preflow import PreFlow
@@ -33,7 +34,7 @@ from orchestrate.core.workflow_search_result import WorkflowSearchResult
 class WorkflowRetrieval:
     def __init__(self, storage: WorkflowStorage):
         self.storage = storage
-        self._db_mode = get_conf().get("persistence_mode", "file") != "file"
+        self._db_mode = get_conf().get("persistence_mode", "file").lower() != "file"
 
     def _list_psop_summaries(self) -> List[WorkflowSearchResult]:
         if self._db_mode:
@@ -42,7 +43,7 @@ class WorkflowRetrieval:
         for wf_id in self.storage.list_psops():
             psop = self.storage.load_psop(wf_id)
             if psop:
-                tasks_summary = self._build_tasks_summary(psop)
+                tasks_summary = build_tasks_summary(psop)
                 results.append(WorkflowSearchResult(
                     workflow_id=psop.id,
                     workflow_type="psop",
@@ -55,18 +56,6 @@ class WorkflowRetrieval:
                     tasks_summary=tasks_summary,
                 ))
         return results
-
-    @staticmethod
-    def _build_tasks_summary(psop: PSOP) -> Optional[str]:
-        task_descriptions = []
-        for step in psop.steps[:8]:
-            for task in step.subtasks[:3]:
-                desc = (task.description or "").strip()
-                if desc:
-                    task_descriptions.append(f"[{step.name}] {desc}")
-        if not task_descriptions:
-            return None
-        return "; ".join(task_descriptions[:12])
 
     def _load_psop_by_id(self, workflow_id: str) -> Optional[PSOP]:
         if self._db_mode:

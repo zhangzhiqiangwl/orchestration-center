@@ -47,7 +47,7 @@ async def get_agent_cards() -> List[AgentCard]:
     except HTTPException:
         raise
     except Exception as e:
-        logger.warning(f"Failed to fetch agent cards from registry: {e}")
-        return []
+        logger.error(f"Failed to fetch agent cards from registry: {e}")
+        raise HTTPException(status_code=503, detail="Agent registry unavailable")
     finally:
         await client.close()

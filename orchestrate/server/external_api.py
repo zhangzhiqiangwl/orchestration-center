@@ -47,12 +47,11 @@ from orchestrate.core.intent_psop_generator import IntentPsopGenerator
 from orchestrate.core.model.preflow import PreFlow
 from orchestrate.core.model.psop import PSOP
 from orchestrate.core.psop_generator import PsopGenerator
-from orchestrate.core.retrieval import WorkflowRetrieval
+from orchestrate.server.shared_handlers import SharedHandlers
 from orchestrate.server.sse_executor import run_psop_sse
 from orchestrate.server.response_utils import ok, created, get_agent_cards
 from orchestrate.server.middleware import RateLimiter
 from orchestrate.solution_package.parse_flow import SolutionPackageParser
-from orchestrate.workflow_storage_instance import get_workflow_storage
 from common.util.config_util import get_conf
 
 router = APIRouter(prefix="/api/v1")
@@ -251,7 +250,7 @@ async def get_psop(
     Returns the complete PSOP including all steps, tasks, and conditions.
     """
     try:
-        retrieval = WorkflowRetrieval(get_workflow_storage())
+        retrieval = SharedHandlers.retrieval()
         psop = retrieval.get_psop_by_id(psop_id)
         if not psop:
             raise HTTPException(status_code=404, detail=f"PSOP {psop_id} not found")
@@ -280,7 +279,7 @@ async def search_workflows(
     (summary only: id, name, description, tags, created_at, user_intent).
     """
     try:
-        retrieval = WorkflowRetrieval(get_workflow_storage())
+        retrieval = SharedHandlers.retrieval()
         results = retrieval.retrieve_psop_by_intent_topn(body.intent, body.top_n or 5)
         return ok(data=[r.to_dict() for r in results], message=f"Found {len(results)} matching workflow(s)")
     except HTTPException:
@@ -314,7 +313,7 @@ async def execute_workflow(
     try:
         execute_semaphore.acquire_nowait()
         acquired = True
-        retrieval = WorkflowRetrieval(get_workflow_storage())
+        retrieval = SharedHandlers.retrieval()
         psop = retrieval.retrieve_psop_by_intent(body.task)
 
         if not psop:
@@ -364,7 +363,7 @@ async def execute_psop_by_id(
     try:
         execute_semaphore.acquire_nowait()
         acquired = True
-        retrieval = WorkflowRetrieval(get_workflow_storage())
+        retrieval = SharedHandlers.retrieval()
         psop = retrieval.get_psop_by_id(psop_id)
         if not psop:
             raise HTTPException(status_code=404, detail=f"PSOP {psop_id} not found")

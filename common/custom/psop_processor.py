@@ -15,6 +15,8 @@
 
 import json
 
+from typing import Optional
+
 from loguru import logger
 
 from database.utils.db_connection import create_connection
@@ -27,6 +29,10 @@ def custom_save_psop(psop):
     save_sql = """
                INSERT INTO psop (id, name, description, psop_content)
                VALUES (%s, %s, %s, %s)
+               ON CONFLICT (id) DO UPDATE SET
+                   name = EXCLUDED.name,
+                   description = EXCLUDED.description,
+                   psop_content = EXCLUDED.psop_content
                """
     conn = create_connection()
     if conn is None:
@@ -67,7 +73,7 @@ def custom_delete_psop(workflow_id):
         conn.close()
 
 
-def _build_tasks_summary(psop: PSOP) -> str:
+def build_tasks_summary(psop: PSOP) -> Optional[str]:
     task_descriptions = []
     for step in psop.steps[:8]:
         for task in step.subtasks[:3]:
@@ -75,7 +81,7 @@ def _build_tasks_summary(psop: PSOP) -> str:
             if desc:
                 task_descriptions.append(f"[{step.name}] {desc}")
     if not task_descriptions:
-        return ""
+        return None
     return "; ".join(task_descriptions[:12])
 
 
@@ -101,7 +107,7 @@ def get_all_psops():
                 created_at=psop.created_at,
                 user_intent=psop.user_intent,
                 related_preflow=psop.related_preflow,
-                tasks_summary=_build_tasks_summary(psop),
+                tasks_summary=build_tasks_summary(psop),
             ))
         logger.debug(f"[DB] Listed {len(result)} PSOP(s)")
         return result
