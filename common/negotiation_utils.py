@@ -124,7 +124,7 @@ response indicates the agent was **unable to complete** the task or **needs help
 more information, or clarification**.
 
 # Agent Response
-{response_text[:1500]}
+{response_text}
 
 # Judgment Rules
 - If the response expresses confusion, uncertainty, inability to proceed, or explicitly

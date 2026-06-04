@@ -18,7 +18,8 @@ import {
     Clock,
     CheckCircle2,
     XCircle,
-    RotateCcw
+    RotateCcw,
+    MessageSquare
 } from 'lucide-react';
 import { getWorkflowById, getStartProcessStreamUrl, matchWorkflowsTopN, getExecutionRecords, getExecutionRecord, deleteExecutionRecord } from '@/service/api.js';
 import { transformWorkflowToReactFlow } from '@/components/orchestration_center/workflow/utils/index.jsx';
@@ -274,6 +275,9 @@ const LogEntry = React.memo(({ event, isDark, t, isSelected }) => {
             let results = [];
             if (obj.text && typeof obj.text === 'string') results.push(obj.text);
             if (obj.message && typeof obj.message === 'string') results.push(obj.message);
+            if (obj.concern && typeof obj.concern === 'string') results.push(obj.concern);
+            if (obj.clarification && typeof obj.clarification === 'string') results.push(obj.clarification);
+            if (obj.reason && typeof obj.reason === 'string') results.push(obj.reason);
 
             if (results.length === 0) {
                 if (obj.parts) results = results.concat(findText(obj.parts, seen));
@@ -291,15 +295,40 @@ const LogEntry = React.memo(({ event, isDark, t, isSelected }) => {
             return results;
         };
 
-        const allText = Array.from(new Set(findText(parsed)));
+        const negotiationMarkers = /^\[NEGOTIATION_(RESOLUTION|REQUEST|CONTEXT)\]/;
+        const contextJsonPattern = /^\{\s*"negotiation(?:Type|Id)"\s*:/;
+
+        const allText = Array.from(new Set(findText(parsed)))
+            .filter(t => {
+                if (typeof t !== 'string') return true;
+                if (contextJsonPattern.test(t.trim())) return false;
+                return true;
+            })
+            .map(t => {
+                if (typeof t !== 'string') return t;
+                let text = t;
+                text = text.replace(/\[NEGOTIATION_CONTEXT\]\s*\n[\s\S]*$/, '').trimEnd();
+                text = text.replace(/\[NEGOTIATION_RESOLUTION\]\s*\n/g, '');
+                text = text.replace(/\[NEGOTIATION_REQUEST\]\s*\n/g, '');
+                text = text.replace(/^The engine has reviewed your negotiation request and provides the following clarification:\s*\n/m, '');
+                text = text.replace(/^-{3,}\s*\nOriginal Task:\s*\n/m, '---\n\n**Original Task:**\n\n');
+                return text.trim();
+            })
+            .filter(t => typeof t === 'string' && t.length > 0);
         return allText.join('\n\n');
     }, [parsed, isProtobuf]);
 
     const isRequest = event.type === 'agent_request';
-    const accentColor = isRequest ? 'blue' : 'purple';
-    const bgLight = isRequest ? 'bg-blue-50 border-blue-100 text-blue-700 dark:bg-blue-900/20 dark:border-blue-800/50 dark:text-blue-400'
-        : 'bg-purple-50 border-purple-100 text-purple-700 dark:bg-purple-900/20 dark:border-purple-800/50 dark:text-purple-400';
-    const dotColor = isRequest ? 'bg-blue-600' : 'bg-purple-600';
+    const isNegotiation = event.type === 'negotiation_request' || event.type === 'negotiation_resolved' || event.type === 'negotiation_failed';
+    const isNegotiationFailed = event.type === 'negotiation_failed';
+    const accentColor = isNegotiationFailed ? 'rose' : (isNegotiation ? 'amber' : (isRequest ? 'blue' : 'purple'));
+    const bgLight = isNegotiationFailed
+        ? 'bg-rose-50 border-rose-200 text-rose-700 dark:bg-rose-900/20 dark:border-rose-800/50 dark:text-rose-400'
+        : (isNegotiation
+            ? 'bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-900/20 dark:border-amber-800/50 dark:text-amber-400'
+            : (isRequest ? 'bg-blue-50 border-blue-100 text-blue-700 dark:bg-blue-900/20 dark:border-blue-800/50 dark:text-blue-400'
+            : 'bg-purple-50 border-purple-100 text-purple-700 dark:bg-purple-900/20 dark:border-purple-800/50 dark:text-purple-400'));
+    const dotColor = isNegotiationFailed ? 'bg-rose-500' : (isNegotiation ? 'bg-amber-500' : (isRequest ? 'bg-blue-600' : 'bg-purple-600'));
 
     return (
         <div 
@@ -316,8 +345,14 @@ const LogEntry = React.memo(({ event, isDark, t, isSelected }) => {
 
             <div className="flex items-center gap-4 mb-3">
                 <div className={`flex items-center gap-2 px-3.5 py-2 rounded-xl border-2 shadow-sm transition-all ${bgLight}`}>
-                    <Bot size={15} className="opacity-80" />
-                    <span className="text-[12.5px] font-black uppercase tracking-widest font-mono">{event.data.agent}</span>
+                    {isNegotiation ? <MessageSquare size={15} className="opacity-80" /> : <Bot size={15} className="opacity-80" />}
+                    <span className="text-[12.5px] font-black uppercase tracking-widest font-mono">
+                        {isNegotiationFailed
+                            ? 'Negotiation Failed'
+                            : (isNegotiation
+                                ? (event.type === 'negotiation_request' ? 'Negotiation Request' : 'Negotiation Resolved')
+                                : event.data.agent)}
+                    </span>
                 </div>
                 <span className="ml-auto text-[11px] font-mono opacity-30">{new Date(event.timestamp * 1000).toLocaleTimeString()}</span>
             </div>
@@ -580,7 +615,9 @@ const ExecutionCenter = ({ isDark }) => {
         es.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data);
-                if (data.type === 'agent_request' || data.type === 'agent_response') {
+                if (data.type === 'agent_request' || data.type === 'agent_response'
+                    || data.type === 'negotiation_request' || data.type === 'negotiation_resolved'
+                    || data.type === 'negotiation_failed') {
                     setEvents(prev => [...prev, data]);
                 }
 

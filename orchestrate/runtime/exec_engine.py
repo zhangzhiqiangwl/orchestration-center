@@ -180,14 +180,27 @@ class DynamicWorkflowEngine:
             from a2a.types import TaskState as TS
             if task_state == TS.TASK_STATE_INPUT_REQUIRED:
                 if _round >= self._NEGOTIATION_MAX_ROUNDS:
-                    logger.warning(
-                        f"Negotiation with agent '{agent_name}' reached max rounds ({self._NEGOTIATION_MAX_ROUNDS}), "
-                        f"using last response as-is."
+                    logger.error(
+                        f"Negotiation with agent '{agent_name}' reached max rounds ({self._NEGOTIATION_MAX_ROUNDS}) "
+                        f"without convergence. Marking step as failed."
                     )
-                    return response_text or ""
+                    self._push_event("negotiation_failed", {
+                        "agent": agent_name,
+                        "response": json.dumps({
+                            "type": "negotiation_failed",
+                            "agent": agent_name,
+                            "round": _round + 1,
+                            "reason": f"Negotiation did not converge after {self._NEGOTIATION_MAX_ROUNDS} round(s)",
+                        }, ensure_ascii=False),
+                    })
+                    raise RuntimeError(
+                        f"Negotiation with agent '{agent_name}' did not converge after "
+                        f"{self._NEGOTIATION_MAX_ROUNDS} round(s). Final agent response: {response_text[:300]}"
+                    )
                 logger.info(
                     f"Agent '{agent_name}' requested negotiation (round {_round + 1}/{self._NEGOTIATION_MAX_ROUNDS})"
                 )
+                self._push_negotiation_event(agent_name, metadata_dict, _round)
                 resolved_task = await self._handle_agent_negotiation(
                     agent_name, task, metadata_dict
                 )
@@ -207,7 +220,14 @@ class DynamicWorkflowEngine:
             raise RuntimeError(f"Agent not found: {agent_name}")
 
         task_text = task
-        if self.a2at_client:
+        skip_prompt_gen = False
+        try:
+            from common.negotiation_utils import is_follow_up_task
+            skip_prompt_gen = is_follow_up_task(task)
+        except ImportError:
+            pass
+
+        if self.a2at_client and not skip_prompt_gen:
             try:
                 prompt_result = self.a2at_client.generate_task_prompt(task)
                 if prompt_result.success and prompt_result.prompt_text:
@@ -321,6 +341,21 @@ class DynamicWorkflowEngine:
             "details": details
         })
 
+    def _push_negotiation_event(self, agent_name: str, metadata_dict: Dict[str, Any], round_num: int):
+        concern = metadata_dict.get("negotiationConcern", "")
+        context_data = metadata_dict.get("negotiationContext", {})
+        self._push_event("negotiation_request", {
+            "agent": agent_name,
+            "response": json.dumps({
+                "type": "negotiation_request",
+                "agent": agent_name,
+                "round": round_num + 1,
+                "concern": concern or "(Agent expressed uncertainty about the task)",
+                "negotiationType": context_data.get("negotiationType", "fulfillment") if isinstance(context_data, dict) else "fulfillment",
+                "negotiationId": context_data.get("negotiationId", "") if isinstance(context_data, dict) else "",
+            }, ensure_ascii=False),
+        })
+
     async def _handle_agent_negotiation(
         self,
         agent_name: str,
@@ -335,7 +370,11 @@ class DynamicWorkflowEngine:
             extract_negotiation_content,
             build_negotiation_resolution_task,
             NEGOTIATION_CONTEXT_KEY,
+            extract_original_task_from_follow_up,
         )
+
+        # Strip any existing negotiation resolution markers to avoid recursive nesting
+        clean_original = extract_original_task_from_follow_up(original_task) or original_task
 
         negotiation_text, context_data = extract_negotiation_content(metadata_dict)
         if not negotiation_text or not context_data:
@@ -352,12 +391,31 @@ class DynamicWorkflowEngine:
             logger.info(f"No negotiation context in response, generating simple clarification")
             clarification = await self._generate_negotiation_clarification(
                 agent_name=agent_name,
-                original_task=original_task,
+                original_task=clean_original,
                 negotiation_text=negotiation_text,
                 receive_message="",
             )
             if clarification:
-                return build_negotiation_resolution_task(original_task, clarification)
+                resolved = build_negotiation_resolution_task(clean_original, clarification)
+                self._push_event("negotiation_resolved", {
+                    "agent": agent_name,
+                    "response": json.dumps({
+                        "type": "negotiation_resolved",
+                        "agent": agent_name,
+                        "round": 0,
+                        "clarification": clarification,
+                        "originalTask": original_task,
+                    }, ensure_ascii=False),
+                })
+                return resolved
+            self._push_event("negotiation_failed", {
+                "agent": agent_name,
+                "response": json.dumps({
+                    "type": "negotiation_failed",
+                    "agent": agent_name,
+                    "reason": "Failed to generate clarification",
+                }, ensure_ascii=False),
+            })
             return None
 
         try:
@@ -376,23 +434,40 @@ class DynamicWorkflowEngine:
         )
 
         if not need_response:
+            self._push_event("negotiation_failed", {
+                "agent": agent_name,
+                "response": json.dumps({
+                    "type": "negotiation_failed",
+                    "agent": agent_name,
+                    "reason": f"Agent did not require a response (needResponse=false)",
+                }, ensure_ascii=False),
+            })
             return None
 
         clarification = await self._generate_negotiation_clarification(
             agent_name=agent_name,
-            original_task=original_task,
+            original_task=clean_original,
             negotiation_text=negotiation_text,
             receive_message=receive_result.get("message", ""),
         )
 
         if not clarification:
             logger.warning(f"Failed to generate negotiation clarification")
+            self._push_event("negotiation_failed", {
+                "agent": agent_name,
+                "response": json.dumps({
+                    "type": "negotiation_failed",
+                    "agent": agent_name,
+                    "reason": "LLM clarification generation failed",
+                }, ensure_ascii=False),
+            })
             return None
 
         from a2a_t.negotiation.common.enums import NegotiationStatus
         from a2a_t.negotiation.common.models import ContinueNegotiationInput, NegotiationContext
 
         context_obj = NegotiationContext.from_context(context_data)
+        continued_context_data = None
         try:
             continue_result = self.a2at_client.continue_negotiation(
                 ContinueNegotiationInput(
@@ -402,22 +477,23 @@ class DynamicWorkflowEngine:
                 )
             )
             logger.info(f"Negotiation continued successfully, round={context_obj.round + 1}")
+            continued_context_data = continue_result.get(NEGOTIATION_CONTEXT_KEY)
         except Exception as e:
             logger.warning(f"Failed to continue negotiation: {e}")
-            resolved_task = build_negotiation_resolution_task(original_task, clarification)
-            return resolved_task
-
-        continued_context_data = continue_result.get(NEGOTIATION_CONTEXT_KEY)
 
         resolved_task = build_negotiation_resolution_task(
-            original_task, clarification,
+            clean_original, clarification,
             continued_context=continued_context_data,
         )
         self._push_event("negotiation_resolved", {
             "agent": agent_name,
-            "original_task": original_task[:200],
-            "clarification": clarification[:200],
-            "negotiation_round": context_obj.round,
+            "response": json.dumps({
+                "type": "negotiation_resolved",
+                "agent": agent_name,
+                "round": context_obj.round + 1,
+                "clarification": clarification,
+                "originalTask": original_task,
+            }, ensure_ascii=False),
         })
         return resolved_task
 
@@ -495,12 +571,8 @@ Do NOT add any prefix markers like "Clarification:". {lang_hint}"""
             parts.append(f"### {step.name}")
             for task_desc, output in outputs.items():
                 text = output if isinstance(output, str) else str(output)
-                truncated = text[:400] if len(text) > 400 else text
                 parts.append(f"- Task: {task_desc}")
-                parts.append(f"  Output: {truncated}")
-            if len("\n".join(parts)) > 3000:
-                parts.append("... (context truncated)")
-                break
+                parts.append(f"  Output: {text}")
         return "\n".join(parts) if parts else "(no completed steps yet)"
 
     async def _execute_subtasks(self, step: Step) -> tuple[Dict[str, Any], bool]:
@@ -518,7 +590,7 @@ Do NOT add any prefix markers like "Clarification:". {lang_hint}"""
                     "step": step.name,
                     "task": task.description,
                     "status": "success",
-                    "output": raw_output[:200]
+                    "output": raw_output
                 })
                 return task.description, raw_output, True
             except Exception as e:
@@ -614,13 +686,9 @@ Do NOT add any prefix markers like "Clarification:". {lang_hint}"""
             total_chars += len(step_header)
             for task_desc, output in ref_results.items():
                 text = output if isinstance(output, str) else str(output)
-                truncated = text[:300] if len(text) > 300 else text
-                entry = f"**Input (Task)**: {task_desc}\n**Output (Result)**: {truncated}\n\n"
+                entry = f"**Input (Task)**: {task_desc}\n**Output (Result)**: {text}\n\n"
                 parts.append(entry)
                 total_chars += len(entry)
-            if total_chars > self._MAX_CONTEXT_TOKENS_ESTIMATE * 3:
-                parts.append("... (context truncated)\n")
-                break
         return "\n".join(parts).strip()
 
     def _build_task_message(self, task: Task, context_message: str) -> str:
@@ -640,7 +708,6 @@ Do NOT add any prefix markers like "Clarification:". {lang_hint}"""
                 results_context.append(f"[{skill}]: Execution failed - {res['error']}")
             else:
                 text_res = res if isinstance(res, str) else str(res)
-                text_res = text_res[:500] if len(text_res) > 500 else text_res
                 results_context.append(f"[{skill}]: Execution succeeded - Output summary: {text_res}")
         results_text = "\n".join(results_context)
         next_conditions = json.dumps(

@@ -85,7 +85,7 @@ class NegotiationBaseAgentExecutor(AgentExecutor):
                 metadata["negotiationContext"] = negotiation_context_data
             if negotiation_text:
                 metadata["negotiationText"] = negotiation_text
-            metadata["negotiationConcern"] = response[:500]
+            metadata["negotiationConcern"] = response
             return Task(
                 id=context.task_id,
                 context_id=context.context_id,
@@ -93,7 +93,7 @@ class NegotiationBaseAgentExecutor(AgentExecutor):
                 artifacts=[
                     Artifact(
                         artifact_id=str(uuid.uuid4()),
-                        parts=[Part(text=f"{NEGOTIATION_REQUEST_MARKER} {self.__class__.__name__} needs more information to complete this task.\n{response[:300]}")]
+                        parts=[Part(text=f"{NEGOTIATION_REQUEST_MARKER} {self.__class__.__name__} needs more information to complete this task.\n{response}")]
                     )
                 ],
                 metadata=metadata

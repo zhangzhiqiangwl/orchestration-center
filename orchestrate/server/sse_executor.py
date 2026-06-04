@@ -86,7 +86,8 @@ async def run_psop_sse(psop: PSOP, agent_cards: List[AgentCard], runtime_intent:
                 "timestamp": time.monotonic()
             }
             event_queue.put_nowait(event_data)
-            if event_type in ("agent_request", "agent_response", "psop_update", "complete", "start", "error"):
+            if event_type in ("agent_request", "agent_response", "psop_update", "complete", "start", "error",
+                              "negotiation_request", "negotiation_resolved", "negotiation_failed"):
                 collected_events.append(event_data)
 
         async def run_workflow_async():
