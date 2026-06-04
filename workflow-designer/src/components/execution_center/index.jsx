@@ -27,9 +27,8 @@ import UnifiedWorkflow from '../orchestration_center/workflow/index.jsx';
 
 const parseProtobufText = (raw) => {
     if (!raw || typeof raw !== 'string') return { text: raw, metadata: null };
-    const normalized = raw.replace(/\\n/g, '\n');
     const result = { text: '', metadata: {} };
-    const lines = normalized.split('\n');
+    const lines = raw.split('\n');
     let inParts = false;
     let partsText = [];
     for (const line of lines) {
@@ -41,21 +40,21 @@ const parseProtobufText = (raw) => {
         if (roleMatch) { result.metadata.role = roleMatch[1]; continue; }
         if (trimmed.startsWith('parts')) {
             const partsInlineMatch = trimmed.match(/^parts\s*\{[^}]*text:\s*"(.+)"[^}]*\}$/);
-            if (partsInlineMatch) { partsText.push(partsInlineMatch[1]); continue; }
+            if (partsInlineMatch) { partsText.push(partsInlineMatch[1].replace(/\\n/g, '\n')); continue; }
             inParts = true; continue;
         }
         if (inParts && trimmed === '}') { inParts = false; continue; }
         if (inParts) {
             const textMatch = trimmed.match(/^text:\s*"(.+)"$/);
-            if (textMatch) partsText.push(textMatch[1]);
+            if (textMatch) partsText.push(textMatch[1].replace(/\\n/g, '\n'));
         }
     }
     if (partsText.length > 0) {
         result.text = partsText.join('\n');
     } else {
-        const textOnlyMatch = normalized.match(/text:\s*"([^"]+)"/);
-        if (textOnlyMatch) result.text = textOnlyMatch[1];
-        else result.text = normalized;
+        const textOnlyMatch = raw.match(/text:\s*"([^"]+)"/);
+        if (textOnlyMatch) result.text = textOnlyMatch[1].replace(/\\n/g, '\n');
+        else result.text = raw;
     }
     return result;
 };
