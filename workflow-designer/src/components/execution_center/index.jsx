@@ -521,7 +521,14 @@ const ExecutionCenter = ({ isDark }) => {
                 const record = res.data;
                 setSelectedExecutionId(executionId);
                 if (record.final_psop) setPsopStatus(record.final_psop);
-                if (record.events && record.events.length > 0) setEvents(record.events);
+                if (record.events && record.events.length > 0) {
+                    const displayEvents = record.events.filter(e =>
+                        e.type === 'agent_request' || e.type === 'agent_response' ||
+                        e.type === 'negotiation_request' || e.type === 'negotiation_resolved' ||
+                        e.type === 'negotiation_failed'
+                    );
+                    setEvents(displayEvents);
+                }
                 setIsRunning(false);
                 setRunningId(null);
                 setSelectedId(record.psop_id);
