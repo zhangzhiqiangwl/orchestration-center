@@ -1,51 +1,63 @@
-# OpenAN Orchestration Center 设计文档
+# OpenAN 编排中心 设计文档
 
 *版本: 1.0*
 
 ## 1. 系统架构总览
 
-```text
-┌─────────────────────────────────────────────────────────┐
-│                    workflow-designer                      │
-│                React 18 + Vite + Tailwind                  │
-│                    Port 3003 (开发)                        │
-└──────────────────────┬──────────────────────────────────┘
-                       │ REST / SSE
-                       ▼
-┌─────────────────────────────────────────────────────────┐
-│                 FastAPI Backend (port 60000)              │
-│                                                          │
-│  ┌─────────────────────┐  ┌─────────────────────────┐   │
-│  │  Internal API        │  │  External API            │   │
-│  │  /rest/v1/orchestrate│  │  /api/v1/*               │   │
-│  └─────────┬───────────┘  └───────────┬─────────────┘   │
-│            │                          │                  │
-│  ┌─────────▼──────────────────────────▼─────────────┐   │
-│  │              Core Domain Layer                     │   │
-│  │  PSOP Generator ← IntentPSOP Generator             │   │
-│  │  WorkflowRetrieval (semantic search via LLM)       │   │
-│  │  PsopPublisher (version management)                │   │
-│  └─────────┬─────────────────────────────────────────┘   │
-│            │                                              │
-│  ┌─────────▼─────────────────────────────────────────┐   │
-│  │          DynamicWorkflowEngine                     │   │
-│  │  DAG step traversal · parallel A2A calls           │   │
-│  │  async LLM routing · SSE push · A2A-T negotiation  │   │
-│  └─────────┬─────────────────────────────────────────┘   │
-│            │                                              │
-│  ┌─────────▼─────────────────────────────────────────┐   │
-│  │           Pluggable Storage Layer                   │   │
-│  │  HandlerRegistry → file JSON / PostgreSQL           │   │
-│  └────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────┘
-                       │
-        ┌──────────────┼──────────────┐
-        ▼              ▼              ▼
-   ┌─────────┐  ┌──────────┐  ┌───────────┐
-   │Agent A  │  │ Agent B  │  │ Agent C..  │
-   │uvicorn  │  │ uvicorn  │  │ uvicorn    │
-   └─────────┘  └──────────┘  └───────────┘
-         A2A Protocol (gRPC/HTTP) + A2A-T Negotiation
+```mermaid
+graph TB
+    subgraph CONSUMERS["&#xa0;"]
+        direction LR
+        UI["Workflow Designer<br/>React 18 · React Flow<br/>:3003"]
+        EXT["External API Clients<br/>REST / SSE"]
+    end
+
+    subgraph BACKEND["FastAPI Backend :60000"]
+        direction TB
+        API["API Layer<br/><i>/rest/v1/orchestrate/* (internal)  ·  /api/v1/* (external)</i>"]
+        
+        subgraph DOMAIN["Core Domain"]
+            direction LR
+            GEN["PSOP Generator<br/>PDF/SOP → PSOP"]
+            INT["Intent Orchestration<br/>NL → PSOP"]
+            SEARCH["Semantic Retrieval<br/>LLM search"]
+        end
+        
+        ENG["DynamicWorkflowEngine<br/>DAG traversal · parallel A2A calls · A2A-T negotiation · SSE push"]
+        
+        subgraph STORE["Pluggable Storage"]
+            direction LR
+            FS["File JSON"]
+            PG["PostgreSQL"]
+        end
+    end
+
+    subgraph EXTSERV["&#xa0;"]
+        direction LR
+        LLM["LLM<br/>OpenAI-compatible"]
+        REG["Agent Registry<br/>AgentCard discovery"]
+        subgraph AGENTS["A2A Agents"]
+            direction LR
+            A1["dispatch"]
+            A2["ran"]
+            A3["energy_saving"]
+            A4["spn_city"]
+            A5["assurance"]
+            A6["live_streaming"]
+            A7["uncertainty"]
+            A8["negotiation_base"]
+        end
+    end
+
+    UI -->|REST| API
+    EXT -->|REST / SSE| API
+    API --> GEN & INT & SEARCH & ENG
+    GEN & INT & SEARCH -.->|LLM calls| LLM
+    GEN & INT & ENG <-->|AgentCards| REG
+    GEN & INT & SEARCH & ENG --> STORE
+    ENG <==>|A2A gRPC/HTTP| AGENTS
+    ENG -.->|SSE| UI
+    ENG -.->|SSE| EXT
 ```
 
 **数据流方向**: 用户意图/PreFlow → PSOP生成 → 存储 → 执行引擎 → A2A Agent并行调用 → SSE事件推送 → 执行记录存储
@@ -253,7 +265,7 @@ run()
 | 标签页 | 组件 | 功能 |
 |--------|------|------|
 | Agent 注册中心 | `registry_center/` | 浏览已注册 Agent 的详细信息（描述、技能、能力等） |
-| 编排中心 | `orchestration_center/` | 三种方式创建工作流：PDF 导入 / 拖拽编排 / AI 生成；模板市场一键导入；工作流管理（CRUD + 版本发布） |
+| 编排中心 | `orchestration_center/` | 三种方式创建工作流：PDF 导入 / 拖拽编排 / AI 生成；模板市场导入；工作流管理（CRUD + 版本发布） |
 | 执行中心 | `execution_center/` | 意图检索 → 匹配工作流 → SSE 实时执行 → 事件日志 |
 
 ### 6.3 编排中心核心流程
@@ -313,13 +325,13 @@ etc/conf/llm_config.json   (LLM 提供商配置)
 
 ---
 
-## 8. 设计亮点
+## 8. 关键设计决策
 
-1. **分层上下文传播**（`layer` + `context_from`）——精巧的多 Agent 协作设计，支持跨层聚合
-2. **插件式存储**（`HandlerRegistry`）——file/DB 切换只需更换 handler，设计方向正确
-3. **PSOP DAG 模型**——支持条件分支和并发执行，语义清晰
-4. **SSE 流式推送**——配合 `execution_history` 和 `events` 可完整回放执行过程
-5. **向量化 Prompt 工程**——通过 few-shot 示例和 JSON schema 约束 LLM 输出质量
-6. **原子写入**（`tempfile + os.replace`）——防止文件损坏
-7. **全链路 async**——Subtask 并行执行（asyncio.gather），消除事件循环阻塞风险
-8. **多层防护**——Semaphore 并发控制 + RateLimiter 速率限制覆盖所有 API 端点
+1. **分层上下文传播**（`layer` + `context_from`）——Layer 0 步骤独立执行，Layer >= 1 步骤通过 `context_from` 声明依赖的前驱步骤，引擎自动收集上游输出注入为上下文。`context_from: ["*"]` 表示接收所有前驱（含间接）输出。
+2. **插件式存储**（`HandlerRegistry`）——通过 `InterfaceType` 枚举 + `persistence_mode` 配置分发操作到 file 或 PostgreSQL handler，新增存储后端实现 handler 接口并注册即可。
+3. **PSOP DAG 模型**——`Step` 包含 `subtasks`（并行任务列表）、`type`（`ALL_SUCCESS` / `ANY_SUCCESS` 执行模式）、`next`（条件跳转列表）。`JumpCondition` 支持声明式转发和 LLM 动态路由两种方式。
+4. **SSE 流式推送**——执行引擎通过 `push_callback` 将事件写入 `asyncio.Queue`，SSE 端点消费队列并 yield 为 `text/event-stream`。执行记录保存完整 `events` 数组，支持事后回放。
+5. **Prompt 工程**——PSOP 生成、意图检索、LLM 路由决策均使用结构化 JSON schema 约束输出格式，配合 few-shot 示例减少自由格式偏差。
+6. **原子写入**——文件持久化使用 `tempfile.mkstemp` + `os.replace` 确保写入过程不产生半写文件。
+7. **全链路 async**——Subtask 通过 `asyncio.gather` / `asyncio.as_completed` 并行执行，LLM 调用通过 `run_in_executor` 包装避免阻塞事件循环。
+8. **多层防护**——每个 API 端点配置 `anyio.Semaphore` 并发上限 + `RateLimiter` 按 IP 速率限制。

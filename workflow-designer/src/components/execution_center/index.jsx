@@ -27,9 +27,8 @@ import UnifiedWorkflow from '../orchestration_center/workflow/index.jsx';
 
 const parseProtobufText = (raw) => {
     if (!raw || typeof raw !== 'string') return { text: raw, metadata: null };
-    const normalized = raw.replace(/\\n/g, '\n');
     const result = { text: '', metadata: {} };
-    const lines = normalized.split('\n');
+    const lines = raw.split('\n');
     let inParts = false;
     let partsText = [];
     for (const line of lines) {
@@ -41,21 +40,21 @@ const parseProtobufText = (raw) => {
         if (roleMatch) { result.metadata.role = roleMatch[1]; continue; }
         if (trimmed.startsWith('parts')) {
             const partsInlineMatch = trimmed.match(/^parts\s*\{[^}]*text:\s*"(.+)"[^}]*\}$/);
-            if (partsInlineMatch) { partsText.push(partsInlineMatch[1]); continue; }
+            if (partsInlineMatch) { partsText.push(partsInlineMatch[1].replace(/\\n/g, '\n')); continue; }
             inParts = true; continue;
         }
         if (inParts && trimmed === '}') { inParts = false; continue; }
         if (inParts) {
             const textMatch = trimmed.match(/^text:\s*"(.+)"$/);
-            if (textMatch) partsText.push(textMatch[1]);
+            if (textMatch) partsText.push(textMatch[1].replace(/\\n/g, '\n'));
         }
     }
     if (partsText.length > 0) {
         result.text = partsText.join('\n');
     } else {
-        const textOnlyMatch = normalized.match(/text:\s*"([^"]+)"/);
-        if (textOnlyMatch) result.text = textOnlyMatch[1];
-        else result.text = normalized;
+        const textOnlyMatch = raw.match(/text:\s*"([^"]+)"/);
+        if (textOnlyMatch) result.text = textOnlyMatch[1].replace(/\\n/g, '\n');
+        else result.text = raw;
     }
     return result;
 };
@@ -275,6 +274,7 @@ const LogEntry = React.memo(({ event, isDark, t, isSelected }) => {
             let results = [];
             if (obj.text && typeof obj.text === 'string') results.push(obj.text);
             if (obj.message && typeof obj.message === 'string') results.push(obj.message);
+            if (obj.response && typeof obj.response === 'string') results.push(obj.response);
             if (obj.concern && typeof obj.concern === 'string') results.push(obj.concern);
             if (obj.clarification && typeof obj.clarification === 'string') results.push(obj.clarification);
             if (obj.reason && typeof obj.reason === 'string') results.push(obj.reason);
@@ -296,7 +296,7 @@ const LogEntry = React.memo(({ event, isDark, t, isSelected }) => {
         };
 
         const negotiationMarkers = /^\[NEGOTIATION_(RESOLUTION|REQUEST|CONTEXT)\]/;
-        const contextJsonPattern = /^\{\s*"negotiation(?:Type|Id)"\s*:/;
+        const contextJsonPattern = /^\s*\{\s*"negotiation(?:Type|Id)"\s*:/;
 
         const allText = Array.from(new Set(findText(parsed)))
             .filter(t => {
@@ -348,9 +348,9 @@ const LogEntry = React.memo(({ event, isDark, t, isSelected }) => {
                     {isNegotiation ? <MessageSquare size={15} className="opacity-80" /> : <Bot size={15} className="opacity-80" />}
                     <span className="text-[12.5px] font-black uppercase tracking-widest font-mono">
                         {isNegotiationFailed
-                            ? 'Negotiation Failed'
+                            ? t('execution.negotiation_failed')
                             : (isNegotiation
-                                ? (event.type === 'negotiation_request' ? 'Negotiation Request' : 'Negotiation Resolved')
+                                ? (event.type === 'negotiation_request' ? t('execution.negotiation_request') : t('execution.negotiation_resolved'))
                                 : event.data.agent)}
                     </span>
                 </div>
@@ -521,7 +521,14 @@ const ExecutionCenter = ({ isDark }) => {
                 const record = res.data;
                 setSelectedExecutionId(executionId);
                 if (record.final_psop) setPsopStatus(record.final_psop);
-                if (record.events && record.events.length > 0) setEvents(record.events);
+                if (record.events && record.events.length > 0) {
+                    const displayEvents = record.events.filter(e =>
+                        e.type === 'agent_request' || e.type === 'agent_response' ||
+                        e.type === 'negotiation_request' || e.type === 'negotiation_resolved' ||
+                        e.type === 'negotiation_failed'
+                    );
+                    setEvents(displayEvents);
+                }
                 setIsRunning(false);
                 setRunningId(null);
                 setSelectedId(record.psop_id);

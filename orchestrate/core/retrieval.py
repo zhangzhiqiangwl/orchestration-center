@@ -21,6 +21,7 @@ from typing import Optional, List
 from loguru import logger
 
 from common.custom import HandlerRegistry, InterfaceType
+from common.custom.psop_processor import build_tasks_summary
 from common.llm import get_llm_instance
 from common.util.config_util import get_conf
 from orchestrate.core.model.preflow import PreFlow
@@ -33,7 +34,7 @@ from orchestrate.core.workflow_search_result import WorkflowSearchResult
 class WorkflowRetrieval:
     def __init__(self, storage: WorkflowStorage):
         self.storage = storage
-        self._db_mode = get_conf().get("persistence_mode", "file") != "file"
+        self._db_mode = get_conf().get("persistence_mode", "file").lower() != "file"
 
     def _list_psop_summaries(self) -> List[WorkflowSearchResult]:
         if self._db_mode:
@@ -42,6 +43,7 @@ class WorkflowRetrieval:
         for wf_id in self.storage.list_psops():
             psop = self.storage.load_psop(wf_id)
             if psop:
+                tasks_summary = build_tasks_summary(psop)
                 results.append(WorkflowSearchResult(
                     workflow_id=psop.id,
                     workflow_type="psop",
@@ -51,6 +53,7 @@ class WorkflowRetrieval:
                     created_at=psop.created_at,
                     user_intent=psop.user_intent,
                     related_preflow=psop.related_preflow,
+                    tasks_summary=tasks_summary,
                 ))
         return results
 
@@ -201,7 +204,10 @@ class WorkflowRetrieval:
 
         psop_list = [{
             "name": s.name,
+            "description": s.description or "",
+            "tags": s.tags or [],
             "user_intent": s.user_intent or "",
+            "tasks": s.tasks_summary or "",
             "id": s.workflow_id
         } for s in summaries]
 

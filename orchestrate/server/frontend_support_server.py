@@ -152,12 +152,12 @@ class SavePSOPRequest(BaseModel):
 
 
 class IntentRequest(BaseModel):
-    user_intent: str = Field(..., description="Natural language intent description")
+    user_intent: str = Field(..., min_length=1, max_length=10000, description="Natural language intent description")
     workflow_name: Optional[str] = Field(None, description="Optional workflow name")
 
 
 class RetrieveIntentRequest(BaseModel):
-    user_intent: str = Field(..., description="Natural language intent for retrieval")
+    user_intent: str = Field(..., min_length=1, max_length=10000, description="Natural language intent for retrieval")
 
 
 # ──── Router ────
@@ -503,7 +503,7 @@ async def retrieve_by_intent(
 
 
 class RetrieveTopNRequest(BaseModel):
-    user_intent: str = Field(..., description="Natural language intent for retrieval")
+    user_intent: str = Field(..., min_length=1, max_length=10000, description="Natural language intent for retrieval")
     top_n: int = Field(default=3, ge=1, le=10, description="Max results to return")
 
 

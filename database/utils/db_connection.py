@@ -93,3 +93,4 @@ def create_connection():
         return conn
     except Exception as e:
         logger.error(f"Unable to connect to database: {e}")
+        return None

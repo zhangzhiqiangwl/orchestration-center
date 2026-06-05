@@ -103,7 +103,7 @@ async def register_or_update_agent(factory, agent_card: AgentCard) -> dict:
 
 def pre_insert_psop():
     from common.util.config_util import get_conf
-    if get_conf().get("persistence_mode", "file") == "file":
+    if get_conf().get("persistence_mode", "file").lower() == "file":
         logger.info("Persistence mode is file, skipping pre_insert_psop")
         return
 

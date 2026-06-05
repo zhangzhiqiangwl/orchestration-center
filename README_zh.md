@@ -37,11 +37,65 @@ All Rights Reserved.
 
 ## 概述
 
-编排中心是一个面向多智能体（Agent）协作的**可视化编排平台**，提供拖拽式工作流设计器、异步执行引擎和 A2A-T 协商集成，帮助用户无需编写代码即可构建、管理和运行复杂的 Agent 协作流程。
+编排中心是一个面向多智能体（Agent）协作的可视化编排平台，提供拖拽式工作流设计器、异步执行引擎和 A2A-T 协商集成。
 
 **典型场景：** 电信网络保障工作流、RAN 节能编排、SPN 故障处理流水线、企业多智能体自动化。
 
-<img src="docs/images/workflow.png" width="700" alt="编排中心架构">
+```mermaid
+graph TB
+    subgraph CONSUMERS["&#xa0;"]
+        direction LR
+        UI["Workflow Designer<br/>React 18 · React Flow<br/>:3003"]
+        EXT["External API Clients<br/>REST / SSE"]
+    end
+
+    subgraph BACKEND["FastAPI Backend :60000"]
+        direction TB
+        API["API Layer<br/><i>/rest/v1/orchestrate/* (internal)  ·  /api/v1/* (external)</i>"]
+        
+        subgraph DOMAIN["Core Domain"]
+            direction LR
+            GEN["PSOP Generator<br/>PDF/SOP → PSOP"]
+            INT["Intent Orchestration<br/>NL → PSOP"]
+            SEARCH["Semantic Retrieval<br/>LLM search"]
+        end
+        
+        ENG["DynamicWorkflowEngine<br/>DAG traversal · parallel A2A calls · A2A-T negotiation · SSE push"]
+        
+        subgraph STORE["Pluggable Storage"]
+            direction LR
+            FS["File JSON"]
+            PG["PostgreSQL"]
+        end
+    end
+
+    subgraph EXTSERV["&#xa0;"]
+        direction LR
+        LLM["LLM<br/>OpenAI-compatible"]
+        REG["Agent Registry<br/>AgentCard discovery"]
+        subgraph AGENTS["A2A Agents"]
+            direction LR
+            A1["dispatch"]
+            A2["ran"]
+            A3["energy_saving"]
+            A4["spn_city"]
+            A5["assurance"]
+            A6["live_streaming"]
+            A7["uncertainty"]
+            A8["negotiation_base"]
+        end
+    end
+
+    UI -->|REST| API
+    EXT -->|REST / SSE| API
+    API --> GEN & INT & SEARCH & ENG
+    GEN & INT & SEARCH -.->|LLM calls| LLM
+    GEN & INT & ENG <-->|AgentCards| REG
+    GEN & INT & SEARCH & ENG --> STORE
+    ENG <==>|A2A gRPC/HTTP| AGENTS
+    ENG -.->|SSE| UI
+    ENG -.->|SSE| EXT
+```
 
 ## 核心能力
 
@@ -195,7 +249,7 @@ A2AT_NEGOTIATION_STATE_STORE_TYPE=in_memory
 | [前端 README](workflow-designer/README.md) | 工作流设计器技术栈与开发 |
 | [LLM 配置](common/config/README_zh.md) | LLM 配置文件说明 |
 
-> English documentation is available under [docs/en/](docs/en/).
+> 英文文档请参见 [docs/en/](docs/en/)。
 
 ## 许可证
 
