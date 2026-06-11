@@ -97,7 +97,7 @@ class DynamicWorkflowEngine:
                     interceptors.append(AuthInterceptor(cred_svc))
                     logger.info(f"Agent '{card.name}' configured with AuthInterceptor")
                 else:
-                    logger.debug(f"Agent '{card.name}' has security schemes but no credentials configured, auth disabled")
+                    logger.info(f"Agent '{card.name}' has security schemes but no credentials configured, auth disabled")
             if getattr(card, 'capabilities', None) and card.capabilities.extensions:
                 ext_uris = [ext.uri for ext in card.capabilities.extensions if ext.uri]
                 if ext_uris:
@@ -112,7 +112,7 @@ class DynamicWorkflowEngine:
     def _get_httpx_client(self) -> httpx.AsyncClient:
         if self._httpx_client is None:
             timeout_config = httpx.Timeout(connect=60, read=60, write=60, pool=10.0)
-            self._httpx_client = httpx.AsyncClient(timeout=timeout_config, verify=False)
+            self._httpx_client = httpx.AsyncClient(timeout=timeout_config, verify=False, follow_redirects=True)
             auth_manager = get_auth_manager()
             auth_manager.set_httpx_client(self._httpx_client)
         return self._httpx_client
@@ -302,12 +302,15 @@ class DynamicWorkflowEngine:
 
         try:
             client = httpx_client or self._get_httpx_client()
+            protocol_bindings = [
+                iface.protocol_binding for iface in agent_card.supported_interfaces
+                if iface.protocol_binding
+            ] or ["HTTP+JSON", "JSONRPC"]
+            selected_url = agent_card.supported_interfaces[0].url if agent_card.supported_interfaces else "N/A"
+            logger.info(f"Calling agent '{agent_name}' via {protocol_bindings[0] if protocol_bindings else 'unknown'} -> {selected_url}")
             config = ClientConfig(
                 httpx_client=client,
-                supported_protocol_bindings=[
-                    "JSONRPC",
-                    "HTTP+JSON",
-                ],
+                supported_protocol_bindings=protocol_bindings,
                 streaming=agent_card.capabilities.streaming if agent_card.capabilities else False,
             )
             client = ClientFactory(config).create(agent_card, interceptors=self._get_interceptors(agent_name))
@@ -724,7 +727,7 @@ Do NOT add any prefix markers like "Clarification:". {lang_hint}"""
         for s in self.workflow.steps:
             if s.next:
                 for jc in s.next:
-                    if jc.step == step_name:
+                    if jc.step == step_name and s.name != step_name:
                         predecessors.append(s.name)
                         break
         return predecessors
@@ -737,7 +740,7 @@ Do NOT add any prefix markers like "Clarification:". {lang_hint}"""
             for s in self.workflow.steps:
                 if s.next:
                     for jc in s.next:
-                        if jc.step == current and s.name not in ancestors:
+                        if jc.step == current and s.name != current and s.name not in ancestors:
                             ancestors.add(s.name)
                             queue.append(s.name)
         return list(ancestors)

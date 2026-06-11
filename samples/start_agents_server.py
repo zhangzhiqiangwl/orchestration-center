@@ -21,7 +21,7 @@ from pathlib import Path
 
 import uvicorn
 from a2a.server.request_handlers import DefaultRequestHandler
-from a2a.server.routes import create_rest_routes, create_agent_card_routes
+from a2a.server.routes import create_rest_routes, create_agent_card_routes, create_jsonrpc_routes
 from a2a.server.tasks import InMemoryTaskStore
 from a2a.types import AgentCard
 from fastapi import FastAPI
@@ -43,6 +43,7 @@ from samples.agents.dispatch_agent import DispatchAgentExecutor
 from samples.agents.spn_agent_city1 import SpnCity1AgentExecutor
 from samples.agents.spn_agent_city2 import SpnCity2AgentExecutor
 from samples.agents.uncertainty_agent import UncertaintySimulationAgentExecutor
+from samples.agents.spn_domain_agent import SpnDomainAgentExecutor
 from common.a2at_config import ensure_env_file_exists
 
 
@@ -133,6 +134,7 @@ async def start_server(agent_card: AgentCard, port: int, host: str = "127.0.0.1"
         "SPN Fault Handling Agent City1 OMC": SpnCity1AgentExecutor,
         "SPN Fault Handling Agent City2 OMC": SpnCity2AgentExecutor,
         "Uncertainty Simulation Agent": UncertaintySimulationAgentExecutor,
+        "SPN Domain Agent": SpnDomainAgentExecutor,
     }
     agent_name = agent_card.name
     agent_class = agent2class.get(agent_name)
@@ -152,17 +154,25 @@ async def start_server(agent_card: AgentCard, port: int, host: str = "127.0.0.1"
         task_store=InMemoryTaskStore(),
         agent_card=agent_card
     )
-    rest_routes = create_rest_routes(
-        request_handler=request_handler
-    )
-
-    agent_card_routes = create_agent_card_routes(
-        agent_card=agent_card
-    )
 
     app = FastAPI()
+
+    agent_card_routes = create_agent_card_routes(agent_card=agent_card)
     app.routes.extend(agent_card_routes)
-    app.routes.extend(rest_routes)
+
+    for iface in agent_card.supported_interfaces:
+        if not iface.url:
+            continue
+        parsed = urlparse(iface.url)
+        path = parsed.path.rstrip("/") or ""
+        if iface.protocol_binding == "JSONRPC":
+            jsonrpc_routes = create_jsonrpc_routes(request_handler=request_handler, rpc_url=path)
+            app.routes.extend(jsonrpc_routes)
+            logger.info(f"Agent '{agent_name}' JSONRPC endpoint: {path}")
+        elif iface.protocol_binding == "HTTP+JSON":
+            rest_routes = create_rest_routes(request_handler=request_handler, path_prefix=path)
+            app.routes.extend(rest_routes)
+            logger.info(f"Agent '{agent_name}' REST endpoint: {path}")
 
     config = uvicorn.Config(app, host=host, port=port)
     uvicorn_server = uvicorn.Server(config)
