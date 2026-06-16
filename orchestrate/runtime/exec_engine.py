@@ -441,8 +441,8 @@ class DynamicWorkflowEngine:
         })
 
     def _push_negotiation_event(self, agent_name: str, metadata_dict: Dict[str, Any], round_num: int):
-        from common.negotiation_utils import NEGOTIATION_CONTEXT_KEY
-        concern = metadata_dict.get("negotiationConcern", "")
+        from common.negotiation_utils import NEGOTIATION_CONTEXT_KEY, NEGOTIATION_CONCERN_KEY
+        concern = metadata_dict.get(NEGOTIATION_CONCERN_KEY, "")
         context_data = metadata_dict.get(NEGOTIATION_CONTEXT_KEY) or {}
         self._push_event("negotiation_request", {
             "agent": agent_name,
@@ -470,6 +470,7 @@ class DynamicWorkflowEngine:
             extract_negotiation_content,
             build_negotiation_resolution_task,
             NEGOTIATION_CONTEXT_KEY,
+            NEGOTIATION_CONCERN_KEY,
             extract_original_task_from_follow_up,
         )
 
@@ -478,7 +479,7 @@ class DynamicWorkflowEngine:
 
         negotiation_text, context_data = extract_negotiation_content(metadata_dict)
         if not negotiation_text or not context_data:
-            negotiation_concern = metadata_dict.get("negotiationConcern", "")
+            negotiation_concern = metadata_dict.get(NEGOTIATION_CONCERN_KEY, "")
             if negotiation_concern:
                 negotiation_text = negotiation_concern
             else:

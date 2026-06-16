@@ -34,7 +34,6 @@ from common.negotiation_utils import (
     NEGOTIATION_TEXT_KEY,
     TASK_PROMPT_KEY,
     NEGOTIATION_REQUEST_MARKER,
-    build_negotiation_metadata,
     build_negotiation_response_metadata,
     log_negotiation_context,
     is_uncertain_response,
